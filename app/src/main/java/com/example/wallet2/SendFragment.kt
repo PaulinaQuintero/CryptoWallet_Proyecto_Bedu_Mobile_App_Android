@@ -1,23 +1,25 @@
 package com.example.wallet2
 
 import android.app.Activity
+import android.app.ProgressDialog
 import android.content.Context
+import android.content.DialogInterface
 import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
-import android.text.Editable
-import android.text.TextWatcher
+import android.os.Handler
+import android.provider.MediaStore
 import android.util.Log
 import android.view.*
 import android.widget.*
 import androidx.appcompat.app.ActionBarDrawerToggle
-import androidx.fragment.app.Fragment
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
 import androidx.drawerlayout.widget.DrawerLayout
-import com.example.wallet2.databinding.FragmentSendBinding
+import androidx.fragment.app.Fragment
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.navigation.NavigationView
 import com.google.android.material.textfield.TextInputLayout
@@ -48,6 +50,8 @@ class SendFragment : Fragment() {
     val itemsprice= listOf(39249.40, 2681.89, 330.14)
 
 
+    private lateinit var textInputLayout: TextInputLayout
+    private lateinit var assetText: AutoCompleteTextView
     private lateinit var amount_textField: TextInputLayout
     private lateinit var amount_value: EditText
     private lateinit var address_textField: TextInputLayout
@@ -129,8 +133,8 @@ class SendFragment : Fragment() {
             true
         }
 
-        val textInputLayout = view.findViewById<TextInputLayout>(R.id.asset_send)
-        val assetText = view.findViewById<AutoCompleteTextView>(R.id.assetText)
+        textInputLayout = view.findViewById(R.id.asset_send)
+        assetText = view.findViewById(R.id.assetText)
         amount_value = view.findViewById(R.id.amount_value)            //--------EdiText
         amount_textField = view.findViewById(R.id.amount_textField)
         address_textField = view.findViewById(R.id.address_input_Layout)
@@ -144,7 +148,18 @@ class SendFragment : Fragment() {
         (textInputLayout.editText as? AutoCompleteTextView)?.setAdapter(adapter)
 
         qrscan_button.setOnClickListener{
-            setUpQRCode()
+            val builder = AlertDialog.Builder(requireActivity())
+            builder.setTitle("Import data from a QR code")
+            builder.setMessage("Choose an option to scan the QR code")
+            // Read QR from camera
+            builder.setPositiveButton("Camera", { dialogInterface: DialogInterface, i: Int ->
+                setUpQRCode()
+            })
+            //Read QR from gallery
+            builder.setNegativeButton("Gallery", { dialogInterface: DialogInterface, i: Int ->
+                readImage()
+            })
+            builder.show()
         }
 
         amount_value.setOnKeyListener(View.OnKeyListener { v, keyCode, event ->
@@ -354,32 +369,37 @@ class SendFragment : Fragment() {
        val confirmationDialog = ConfirmationDialog(asset, amount, address).show(parentFragmentManager, "Confirmation Dialog")
     }
 
+    // Scanner settings
     private fun setUpQRCode(){
         IntentIntegrator(requireActivity())
-            .setDesiredBarcodeFormats(IntentIntegrator.QR_CODE) //Selección del tipo de código a scanear
-            .setTorchEnabled(false) //flash
-            .setBeepEnabled(true)   //sonido al escanear
-            .setPrompt("Scan QR Code")  //Mensaje que aparece al abrir el scaner
+            .setDesiredBarcodeFormats(IntentIntegrator.QR_CODE) // Selecting the type of code to scan
+            .setTorchEnabled(false) // Flash enabled / disabled
+            .setBeepEnabled(true)   // Sound activated when scanning
+            .setPrompt("Scan the QR Code please")  // Message that appears when scanning
             .initiateScan()
+    }
+
+    private fun readImage(){
+        val pickIntent = Intent(Intent.ACTION_PICK)
+        pickIntent.setDataAndType(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "image/*")
+        //SendFragment().startActivityForResult(pickIntent, 111)
+        startActivityForResult(pickIntent, 111)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         //super.onActivityResult(requestCode, resultCode, data)
         when (requestCode) {
-            111 -> {}
-                /*if (data == null || data.data == null) {
-                    Log.e(
-                        "TAG",
-                        "The uri is null, probably the user cancelled the image selection process using the back button."
-                    )
+            111 -> {
+                if (data == null || data.data == null) {
+                    Toast.makeText(requireContext(), "Data import was canceled", Toast.LENGTH_SHORT).show()
                     return
                 }
                 val uri: Uri = data.data!!
                 try {
-                    val inputStream: InputStream? = openInputStream(uri)
+                    val inputStream: InputStream? = activity?.contentResolver?.openInputStream(uri)
                     var bitmap = BitmapFactory.decodeStream(inputStream)
                     if (bitmap == null) {
-                        Log.e("TAG", "uri is not a bitmap," + uri.toString())
+                        Toast.makeText(requireContext(), "Image format is not supported", Toast.LENGTH_SHORT).show()
                         return
                     }
                     val width = bitmap.width
@@ -391,31 +411,36 @@ class SendFragment : Fragment() {
                     val bBitmap = BinaryBitmap(HybridBinarizer(source))
                     val reader = MultiFormatReader()
                     try {
-                        //val result = reader.decode(bBitmap)
-                        //Toast.makeText(this, "The content of the QR image is: " + result.getText(), Toast.LENGTH_SHORT).show()
-                        //val output: List<String> = result.getText().split("\n")
-                        Toast.makeText(requireActivity(), "Lectura realizada con éxito", Toast.LENGTH_SHORT).show()
-                        //name.text = output[0]
-                        //password.text = output[1]
+                        val result = reader.decode(bBitmap)
+                        val output: List<String> = result.getText().split("\n")
+                        // We write the scan results in the text fields
+                        amount_value.setText(output[0])
+                        assetText.setText(output[1])
+                        address_value.setText(output[2])
+                        Toast.makeText(requireContext(), "Data import was successful", Toast.LENGTH_SHORT).show()
                     } catch (e: NotFoundException) {
                         Log.e("TAG", "decode exception", e)
+                        Toast.makeText(requireContext(), "Data import was not successful", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(requireContext(), "Please verify you are reading a QR code", Toast.LENGTH_SHORT).show()
                     }
                 } catch (e: FileNotFoundException) {
                     Log.e("TAG", "can not open file" + uri.toString(), e)
                 }
-            }*/
+            }
             else -> {
                 val result = IntentIntegrator.parseActivityResult(requestCode, resultCode, data)
 
                 if (result != null){
                     if (result.contents == null) {
-                        Toast.makeText(requireContext(), "Escaneo cancelado", Toast.LENGTH_LONG).show()
+                        Toast.makeText(requireContext(), "Scan was canceled", Toast.LENGTH_LONG).show()
                     } else {
-                        Toast.makeText(requireContext(), "El escaneo se ha realizado con éxito", Toast.LENGTH_LONG).show()
-                        //val resultado = result.contents
-                        //val output: List<String> = resultado.split("\n")
-                        //name.text = output[0]
-                        //password.text = output[1]
+                        Toast.makeText(requireContext(), "Scan was successful", Toast.LENGTH_LONG).show()
+                        // We write the scan results in the text fields
+                        val resultado = result.contents
+                        val output: List<String> = resultado.split("\n")
+                        amount_value.setText(output[0])
+                        assetText.setText(output[1])
+                        address_value.setText(output[2])
                     }
                 }else{
                     super.onActivityResult(requestCode, resultCode, data)
